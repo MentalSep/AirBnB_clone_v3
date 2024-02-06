@@ -82,34 +82,35 @@ def update_place(place_id):
 def search_places():
     """ Retrieves the list of all Place objects depending of the JSON
     in the body of the request """
-    if not request.get_json():
+    body = request.get_json()
+    if type(body) is not dict:
         abort(400, description="Not a JSON")
-    cities = request.get_json().get('cities', [])
-    states = request.get_json().get('states', [])
-    amenities = request.get_json().get('amenities', [])
 
-    if not cities and not states and not amenities:
-        places = storage.all(Place).values()
-        return jsonify([place.to_dict() for place in places])
-
+    states = body.get("states", [])
+    cities = body.get("cities", [])
+    amenities = body.get("amenities", [])
     places = []
-    if cities:
-        for city_id in cities:
-            city = storage.get(City, city_id)
-            if city is not None:
-                places.extend(city.places)
 
-    if states:
-        for state_id in states:
-            state = storage.get(State, state_id)
-            if state is not None:
-                for city in state.cities:
-                    places.extend(city.places)
+    if not states and not cities:
+        places = storage.all(Place).values()
+    else:
+        states = [storage.get(State, _id) for _id
+                  in states if storage.get(State, _id)]
+        cities = [city for state in states for city in state.cities]
+        cities += [storage.get(City, _id) for _id
+                   in cities if storage.get(City, _id)]
+        cities = list(set(cities))
+        places = [place for city in cities for place in city.places]
 
-    if amenities:
-        for place in places:
-            place_amenities = {amenity.id for amenity in place.amenities}
-            if not place_amenities.issuperset(amenities):
-                places.remove(place)
+    amenities = [storage.get(Amenity, _id) for _id
+                 in amenities if storage.get(Amenity, _id)]
 
-    return jsonify([place.to_dict() for place in places])
+    result = []
+    for place in places:
+        result.append(place.to_dict())
+        for amenity in amenities:
+            if amenity not in place.amenities:
+                result.pop()
+                break
+
+    return jsonify(result)
